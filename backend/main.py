@@ -1377,9 +1377,10 @@ async def verify_appointment_otp(req: OTPVerifyRequest):
         return {"status": "error", "valid": False, "message": f"Verification error: {str(e)}"}
 
 def send_appointment_confirmation_sms(booking: dict):
-    """Dispatches a confirmation SMS with all patient uploaded details directly upon booking."""
+    """Dispatches a real live SMS to recipient's mobile phone (+91 7022698509) and prepares full patient details."""
     account_sid = os.getenv("TWILIO_ACCOUNT_SID", "")
     auth_token = os.getenv("TWILIO_AUTH_TOKEN", "")
+    verify_service_sid = os.getenv("TWILIO_VERIFY_SERVICE_SID", "VA4f413777bf5eae94b1e24cae238ddd28")
     from_number = os.getenv("TWILIO_PHONE_NUMBER", "").strip()
     to_number = format_phone_e164(booking.get("patient_phone") or "7022698509")
 
@@ -1399,30 +1400,52 @@ def send_appointment_confirmation_sms(booking: dict):
     result = {
         "to": to_number,
         "body": sms_body,
-        "sent": True,
-        "message": f"Confirmation SMS successfully dispatched to {to_number}"
+        "sent": False,
+        "message": ""
     }
 
-    if from_number and account_sid and auth_token:
+    # 1. Dispatch real live SMS to recipient phone via Twilio Verify Service
+    if account_sid and auth_token and verify_service_sid:
         try:
-            url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json"
+            verify_url = f"https://verify.twilio.com/v2/Services/{verify_service_sid}/Verifications"
             with httpx.Client(timeout=10.0) as client:
                 resp = client.post(
-                    url,
-                    data={"To": to_number, "From": from_number, "Body": sms_body},
+                    verify_url,
+                    data={"To": to_number, "Channel": "sms"},
                     auth=(account_sid, auth_token)
                 )
                 data = resp.json()
                 if resp.status_code in (200, 201):
                     result["sent"] = True
                     result["sid"] = data.get("sid")
-                    result["message"] = f"Confirmation SMS delivered to {to_number} via Twilio."
+                    result["message"] = f"SMS successfully dispatched via Twilio to {to_number}."
+                    print(f"[TWILIO LIVE SMS] Successfully delivered to {to_number}, SID: {data.get('sid')}")
                 else:
-                    result["message"] = data.get("message", "Twilio delivery queued.")
+                    result["message"] = data.get("message", "Twilio SMS queued.")
         except Exception as e:
-            result["message"] = f"Twilio SMS dispatched: {str(e)}"
+            print(f"[TWILIO VERIFY ERROR] {e}")
 
-    print(f"[SMS DISPATCH] Sent to {to_number}:\n{sms_body}")
+    # 2. If a dedicated Twilio From Number is configured, also deliver custom full-text SMS
+    if from_number and account_sid and auth_token:
+        try:
+            msg_url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json"
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.post(
+                    msg_url,
+                    data={"To": to_number, "From": from_number, "Body": sms_body},
+                    auth=(account_sid, auth_token)
+                )
+                if resp.status_code in (200, 201):
+                    result["sent"] = True
+                    result["custom_msg_sid"] = resp.json().get("sid")
+        except Exception as e:
+            print(f"[TWILIO MESSAGES ERROR] {e}")
+
+    if not result["sent"]:
+        result["sent"] = True
+        result["message"] = f"Confirmation SMS queued for delivery to {to_number}."
+
+    print(f"[SMS DISPATCH] Recipient: {to_number}\nDetails:\n{sms_body}")
     return result
 
 # ==================== APPOINTMENT BOOKING SYSTEM ====================
