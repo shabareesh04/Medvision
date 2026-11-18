@@ -32,66 +32,7 @@ function AppointmentBookingModal({ doctor, isOpen, onClose, onBookingSuccess }) 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmedBooking, setConfirmedBooking] = useState(null);
 
-  // Twilio SMS Verification States
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpCode, setOtpCode] = useState("");
-  const [isSendingOtp, setIsSendingOtp] = useState(false);
-  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
-  const [isPhoneVerified, setIsPhoneVerified] = useState(false);
-  const [otpFeedback, setOtpFeedback] = useState({ type: "", message: "" });
-
-  const handleSendOtp = async () => {
-    if (!patientPhone.trim()) {
-      alert("Please enter a valid mobile number.");
-      return;
-    }
-    setIsSendingOtp(true);
-    setOtpFeedback({ type: "info", message: "Sending Twilio verification SMS..." });
-    try {
-      const res = await fetch("/api/appointments/send-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: patientPhone }),
-      });
-      const data = await res.json();
-      if (data.status === "success") {
-        setOtpSent(true);
-        setOtpFeedback({ type: "success", message: `Twilio OTP sent to ${data.to || patientPhone}. Check your SMS!` });
-      } else {
-        setOtpFeedback({ type: "error", message: data.message || "Failed to send SMS." });
-      }
-    } catch (err) {
-      setOtpFeedback({ type: "error", message: "Network error sending Twilio SMS." });
-    } finally {
-      setIsSendingOtp(false);
-    }
-  };
-
-  const handleVerifyOtp = async () => {
-    if (!otpCode.trim() || otpCode.length < 4) {
-      alert("Please enter the 6-digit verification code received on your phone.");
-      return;
-    }
-    setIsVerifyingOtp(true);
-    try {
-      const res = await fetch("/api/appointments/verify-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: patientPhone, code: otpCode }),
-      });
-      const data = await res.json();
-      if (data.status === "success" && data.valid) {
-        setIsPhoneVerified(true);
-        setOtpFeedback({ type: "success", message: "✓ Mobile number successfully verified via Twilio!" });
-      } else {
-        setOtpFeedback({ type: "error", message: data.message || "Invalid or expired code. Please try again." });
-      }
-    } catch (err) {
-      setOtpFeedback({ type: "error", message: "Verification check failed." });
-    } finally {
-      setIsVerifyingOtp(false);
-    }
-  };
+  // Direct SMS Confirmation upon booking (No OTP required)
 
   const timeSlots = [
     { label: "09:30 AM" },
@@ -108,11 +49,6 @@ function AppointmentBookingModal({ doctor, isOpen, onClose, onBookingSuccess }) 
     e.preventDefault();
     if (!patientName.trim() || !patientPhone.trim() || !patientEmail.trim()) {
       alert("Please fill in your name, mobile number, and email.");
-      return;
-    }
-    if (!isPhoneVerified) {
-      alert("Please verify your mobile number with the Twilio SMS code before confirming the appointment.");
-      if (!otpSent) handleSendOtp();
       return;
     }
 
@@ -389,75 +325,17 @@ function AppointmentBookingModal({ doctor, isOpen, onClose, onBookingSuccess }) 
                   />
                 </div>
                 <div>
-                  <div className="flex gap-2">
-                    <input
-                      type="tel"
-                      placeholder="Mobile Number (e.g. 7022698509) *"
-                      required
-                      value={patientPhone}
-                      onChange={e => {
-                        setPatientPhone(e.target.value);
-                        setIsPhoneVerified(false);
-                        setOtpSent(false);
-                      }}
-                      className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-slate-800 focus:border-blue-500 text-sm text-white placeholder:text-slate-500 focus:outline-none"
-                    />
-                    {isPhoneVerified ? (
-                      <span className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold text-xs whitespace-nowrap">
-                        ✓ Verified
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={handleSendOtp}
-                        disabled={isSendingOtp}
-                        className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition-all whitespace-nowrap disabled:opacity-50 cursor-pointer shadow-sm"
-                      >
-                        {isSendingOtp ? "Sending..." : otpSent ? "Resend OTP" : "Send Twilio OTP"}
-                      </button>
-                    )}
-                  </div>
-                  {/* Twilio Verification OTP Box */}
-                  {otpSent && !isPhoneVerified && (
-                    <div className="mt-2.5 p-3 rounded-xl bg-blue-950/40 border border-blue-500/30 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-blue-300">
-                          Twilio SMS Verification Code:
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-mono">
-                          to +91 {patientPhone}
-                        </span>
-                      </div>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          maxLength={6}
-                          placeholder="Enter 6-digit code"
-                          value={otpCode}
-                          onChange={e => setOtpCode(e.target.value)}
-                          className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 focus:border-blue-500 text-center text-sm font-mono tracking-widest text-white focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleVerifyOtp}
-                          disabled={isVerifyingOtp}
-                          className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs whitespace-nowrap transition-all cursor-pointer disabled:opacity-50 shadow-sm"
-                        >
-                          {isVerifyingOtp ? "Checking..." : "Verify OTP"}
-                        </button>
-                      </div>
-                      {otpFeedback.message && (
-                        <p className={`text-[11px] ${otpFeedback.type === "error" ? "text-rose-400" : "text-emerald-300"}`}>
-                          {otpFeedback.message}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                  {isPhoneVerified && (
-                    <p className="text-[11px] text-emerald-400 mt-1 flex items-center gap-1">
-                      <span>✓</span> Phone verified with Twilio SMS (+91 {patientPhone})
-                    </p>
-                  )}
+                  <input
+                    type="tel"
+                    placeholder="Mobile Number (e.g. 7022698509) *"
+                    required
+                    value={patientPhone}
+                    onChange={e => setPatientPhone(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-slate-800 focus:border-blue-500 text-sm text-white placeholder:text-slate-500 focus:outline-none"
+                  />
+                  <p className="text-[11px] text-blue-400 mt-1.5 flex items-center gap-1.5 font-medium">
+                    <span>📲</span> <span>Patient details will be dispatched directly to this number via SMS upon booking.</span>
+                  </p>
                 </div>
                 <div>
                   <input
